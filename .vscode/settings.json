@@ -1,5 +1,15 @@
 {
     "files.associations": {
-        "y.tab.h": "c"
+        "y.tab.h": "c",
+        "bit": "cpp",
+        "compare": "cpp",
+        "cstddef": "cpp",
+        "type_traits": "cpp",
+        "cmath": "cpp",
+        "limits": "cpp",
+        "env.h": "c",
+        "semant.h": "c",
+        "types.h": "c",
+        "assert.h": "c"
     }
 }

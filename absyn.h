@@ -1,3 +1,6 @@
+#ifndef ABSYN_H
+#define ABSYN_H
+
 /*
  * absyn.h - Abstract Syntax Header (Chapter 4)
  *
@@ -8,6 +11,7 @@
 /* Type Definitions */
 
 #include "symbol.h"
+#include <stdbool.h>
 
 typedef int A_pos;
 
@@ -60,7 +64,7 @@ struct A_exp_
 	      struct {S_symbol var; A_exp lo,hi,body; bool escape;} forr;
 	      /* breakk; - need only the pos */
 	      struct {A_decList decs; A_exp body;} let;
-	      struct {S_symbol typ; A_exp size, init;} array;
+	      struct {S_symbol typ; A_exp size; A_exp init;} array;
 	    } u;
      };
 
@@ -135,3 +139,5 @@ A_namety A_Namety(S_symbol name, A_ty ty);
 A_nametyList A_NametyList(A_namety head, A_nametyList tail);
 A_efield A_Efield(S_symbol name, A_exp exp);
 A_efieldList A_EfieldList(A_efield head, A_efieldList tail);
+
+#endif /* ABSYN_H */

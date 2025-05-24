@@ -1,5 +1,5 @@
-a.out: parsetest.o y.tab.o lex.yy.o errormsg.o util.o absyn.o symbol.o table.o
-	cc -g parsetest.o y.tab.o lex.yy.o errormsg.o util.o absyn.o symbol.o table.o
+a.out: parsetest.o y.tab.o lex.yy.o errormsg.o util.o absyn.o symbol.o table.o semant.o types.o env.o
+	cc -g parsetest.o y.tab.o lex.yy.o errormsg.o util.o absyn.o symbol.o table.o semant.o types.o env.o
 
 parsetest.o: parsetest.c errormsg.h util.h
 	cc -g -c parsetest.c
@@ -31,8 +31,17 @@ symbol.o: symbol.c symbol.h util.h
 table.o: table.c table.h util.h
 	cc -g -c table.c
 
+env.o: env.c env.h util.h
+	cc -g -c env.c
+
+semant.o: semant.c semant.h util.h
+	cc -g -c semant.c
+
+types.o: types.c types.h util.h
+	cc -g -c types.c
+
 util.o: util.c util.h
 	cc -g -c util.c
 
 clean: 
-	rm -f a.out util.o parsetest.o lex.yy.o errormsg.o y.tab.c y.tab.h y.tab.o absyn.o symbol.o
+	rm -f a.out *.o
