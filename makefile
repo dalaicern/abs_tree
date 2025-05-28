@@ -1,5 +1,5 @@
-a.out: parsetest.o y.tab.o lex.yy.o errormsg.o util.o absyn.o symbol.o table.o semant.o types.o env.o
-	cc -g parsetest.o y.tab.o lex.yy.o errormsg.o util.o absyn.o symbol.o table.o semant.o types.o env.o
+a.out: parsetest.o y.tab.o lex.yy.o errormsg.o util.o absyn.o symbol.o table.o semant.o types.o env.o prabsyn.o
+	cc -g parsetest.o y.tab.o lex.yy.o errormsg.o util.o absyn.o symbol.o table.o semant.o types.o env.o prabsyn.o
 
 parsetest.o: parsetest.c errormsg.h util.h
 	cc -g -c parsetest.c
@@ -21,6 +21,9 @@ lex.yy.o: lex.yy.c y.tab.h errormsg.h util.h
 
 #lex.yy.c: tiger.lex
 #	lex tiger.lex
+
+prabsyn.o: prabsyn.c prabsyn.h util.h symbol.h absyn.h
+	cc -g -c prabsyn.c
 
 absyn.o: absyn.c absyn.h util.h symbol.h
 	cc -g -c absyn.c

@@ -1,2 +1,19 @@
 /* error : body of while not unit */
-while(10 > 5) do 5+6
+let
+    var a := 1
+    var b := 2
+    type list = {first: int, rest: list}
+    
+    var l1 : list := list{first=1}
+    var l2 : list := list{first=2}
+
+    function merge(k: list, m: list): list =
+        k
+
+    function d(k : list): list = (
+        print("hello");
+        k
+    )
+in
+    d(merge(l1, l2))
+end

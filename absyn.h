@@ -35,13 +35,19 @@ typedef enum {A_plusOp, A_minusOp, A_timesOp, A_divideOp,
 	     A_eqOp, A_neqOp, A_ltOp, A_leOp, A_gtOp, A_geOp} A_oper;
 
 struct A_var_
-       {enum {A_simpleVar, A_fieldVar, A_subscriptVar} kind;
+       {
+		enum {A_simpleVar, A_fieldVar, A_subscriptVar} kind;
         A_pos pos;
-	union {S_symbol simple;
-	       struct {A_var var;
-		       S_symbol sym;} field;
-	       struct {A_var var;
-		       A_exp exp;} subscript;
+		union {
+			S_symbol simple;
+	       	struct {
+				A_var var;
+		       	S_symbol sym;
+			} field;
+	       	struct {
+				A_var var;
+		       	A_exp exp;
+			} subscript;
 	     } u;
       };
 

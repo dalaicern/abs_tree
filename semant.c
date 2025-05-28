@@ -1,15 +1,17 @@
+#include <stdio.h>
+#include <stdlib.h>
 #include "semant.h"
 #include "env.h"
 #include <stddef.h> 
 #include <assert.h>
 #include "errormsg.h"
+#include "prabsyn.h"
+
 
 void SEM_transProg(A_exp exp) {
-    // Create and initialize the base type and value environments
     S_table tenv = E_base_tenv();
     S_table venv = E_base_venv();
     
-    // Perform type checking on the entire program
     transExp(venv, tenv, exp);
 }
 
@@ -43,6 +45,8 @@ Ty_tyList makeFormalTyList(S_table tenv, A_fieldList params) {
     return Ty_TyList(ty, makeFormalTyList(tenv, params->tail));
 }
 
+
+
 struct expty expTy(Tr_exp exp, Ty_ty ty) {
     struct expty e;
     e.exp = exp;
@@ -50,19 +54,65 @@ struct expty expTy(Tr_exp exp, Ty_ty ty) {
     return e;
 }
 
+
 struct expty transVar(S_table venv, S_table tenv, A_var v) {
+    if (!v) {
+        EM_error(0, "internal error: NULL variable");
+        return expTy(NULL, Ty_Int());
+    }
+
     switch(v->kind) {
         case A_simpleVar: {
+            //fprintf(stderr,"started simple var\n");
             E_enventry x = S_look(venv, v->u.simple);
-            if (x && x->kind == E_varEntry)
+            if (x && x->kind == E_varEntry){
+                //fprintf(stderr,"simple var returned\n");
                 return expTy(NULL, actual_ty(x->u.var.ty));
-            else {
+            } else {
                 EM_error(v->pos, "undefined variable %s", S_name(v->u.simple));
                 return expTy(NULL, Ty_Int());
             }
         }
-        case A_fieldVar:
-            break;
+        
+        case A_fieldVar: {
+            //fprintf(stderr,"started field var\n");
+            struct expty var = transVar(venv, tenv, v->u.field.var);
+            if (var.ty->kind != Ty_record) {
+                EM_error(v->pos, "not a record type");
+                return expTy(NULL, Ty_Int());
+            }
+            
+            Ty_fieldList fields = var.ty->u.record;
+            while (fields) {
+                if (fields->head->name == v->u.field.sym) {
+                    return expTy(NULL, actual_ty(fields->head->ty));
+                }
+                fields = fields->tail;
+            }
+            
+            EM_error(v->pos, "field %s not found", S_name(v->u.field.sym));
+            return expTy(NULL, Ty_Int());
+        }
+        
+        case A_subscriptVar: {
+            //fprintf(stderr,"started subscript var\n");
+            struct expty var = transVar(venv, tenv, v->u.subscript.var);
+            if (var.ty->kind != Ty_array) {
+                EM_error(v->pos, "array type required");
+                return expTy(NULL, Ty_Int());
+            }
+            
+            struct expty index = transExp(venv, tenv, v->u.subscript.exp);
+            if (index.ty->kind != Ty_int) {
+                EM_error(v->pos, "integer required for array index");
+            }
+            
+            return expTy(NULL, actual_ty(var.ty->u.array));
+        }
+        
+        default:
+            EM_error(v->pos, "unknown variable type");
+            return expTy(NULL, Ty_Int());
     }
 }
 
@@ -81,35 +131,60 @@ struct expty transExp(S_table venv, S_table tenv, A_exp a) {
             return expTy(NULL, Ty_String());
             
         case A_callExp: {
+            //fprintf(stderr,"started call exp\n");
             E_enventry func = S_look(venv, a->u.call.func);
+            //fprintf(stderr,"1\n");
             if (!func || func->kind != E_funEntry) {
                 EM_error(a->pos, "undefined function %s", S_name(a->u.call.func));
-                return expTy(NULL, Ty_Int()); // Default to int for error recovery
+                return expTy(NULL, Ty_Int());
             }
+            //fprintf(stderr,"2\n");
             
-            // Check that argument count matches
+            // pr_exp(stderr, a, 0);
+            
             A_expList args = a->u.call.args;
             Ty_tyList formals = func->u.fun.formals;
-            
+            //fprintf(stderr,"3\n");
             while (args && formals) {
                 struct expty arg = transExp(venv, tenv, args->head);
-                if (formals->head->kind != arg.ty->kind) {
+
+                //fprintf(stderr,"5\n");
+
+                Ty_ty formal_actual = actual_ty(formals->head);
+                Ty_ty arg_actual = actual_ty(arg.ty);
+                
+                //fprintf(stderr, "Argument evaluated to type kind: %d\n", arg.ty->kind);
+                //fprintf(stderr, "Expected formal parameter type kind: %d\n", formals->head->kind);
+                //fprintf(stderr, "After resolution - Arg: %d, Formal: %d\n", arg_actual->kind, formal_actual->kind);
+                
+                if (formal_actual->kind != arg_actual->kind) {
                     EM_error(args->head->pos, "argument type mismatch");
                 }
+                //fprintf(stderr,"6\n");
                 args = args->tail;
                 formals = formals->tail;
             }
-            
+            //fprintf(stderr,"4\n");
+
             if (args) {
                 EM_error(a->pos, "too many arguments");
             } else if (formals) {
                 EM_error(a->pos, "too few arguments");
             }
+
+            //fprintf(stderr, "Function %s result type: %p\n", S_name(a->u.call.func), func->u.fun.result);
+            if (func->u.fun.result) {
+                //fprintf(stderr, "Result type kind: %d\n", func->u.fun.result->kind);
+            } else {
+                //fprintf(stderr, "ERROR: Result type is NULL\n");
+            }
+            //fprintf(stderr,"end call exp\n");
             
             return expTy(NULL, func->u.fun.result);
         }
         
         case A_opExp: {
+            //fprintf(stderr,"started op exp\n");
             A_oper oper = a->u.op.oper;
             struct expty left = transExp(venv, tenv, a->u.op.left);
             struct expty right = transExp(venv, tenv, a->u.op.right);
@@ -120,9 +195,8 @@ struct expty transExp(S_table venv, S_table tenv, A_exp a) {
                 if (right.ty->kind != Ty_int)
                     EM_error(a->u.op.right->pos, "integer required");
                 return expTy(NULL, Ty_Int());
-            }
-            
-            else if (oper == A_eqOp || oper == A_neqOp) {
+
+            } else if (oper == A_eqOp || oper == A_neqOp) {
                 if ((left.ty->kind == Ty_int && right.ty->kind == Ty_int) ||
                     (left.ty->kind == Ty_string && right.ty->kind == Ty_string)) {
                     return expTy(NULL, Ty_Int());
@@ -142,9 +216,8 @@ struct expty transExp(S_table venv, S_table tenv, A_exp a) {
                     EM_error(a->pos, "incomparable types for equality operator");
                     return expTy(NULL, Ty_Int());
                 }
-            }
-            
-            else if (oper == A_ltOp || oper == A_leOp || 
+
+            } else if (oper == A_ltOp || oper == A_leOp || 
                     oper == A_gtOp || oper == A_geOp) {
                 if (left.ty->kind == Ty_int && right.ty->kind == Ty_int) {
                     return expTy(NULL, Ty_Int());
@@ -156,23 +229,20 @@ struct expty transExp(S_table venv, S_table tenv, A_exp a) {
                     EM_error(a->pos, "integer or string required for comparison operator");
                     return expTy(NULL, Ty_Int());
                 }
-            }
-            
-            else {
+            } else {
                 EM_error(a->pos, "unknown operator");
                 return expTy(NULL, Ty_Int());
             }
             break;
         }
         case A_recordExp: {
-            // Look up the record type
+            // fprintf(stderr,"started record exp\n");
             Ty_ty record_ty = S_look(tenv, a->u.record.typ);
             if (!record_ty) {
                 EM_error(a->pos, "undefined type %s", S_name(a->u.record.typ));
                 return expTy(NULL, Ty_Int());
             }
             
-            // Resolve name types 
             record_ty = actual_ty(record_ty);
             
             if (record_ty->kind != Ty_record) {
@@ -180,20 +250,28 @@ struct expty transExp(S_table venv, S_table tenv, A_exp a) {
                 return expTy(NULL, Ty_Record(NULL));
             }
             
-            // Check field types
             A_efieldList fields = a->u.record.fields;
             Ty_fieldList ty_fields = record_ty->u.record;
             
             while (fields && ty_fields) {
-                // Find matching field by name
                 Ty_fieldList tf = ty_fields;
                 bool found = false;
+
+                
                 
                 while (tf && !found) {
                     if (fields->head->name == tf->head->name) {
-                        // Check field type
                         struct expty field_exp = transExp(venv, tenv, fields->head->exp);
-                        if (field_exp.ty->kind != tf->head->ty->kind) {
+
+                        Ty_ty field_exp_actual = actual_ty(field_exp.ty); 
+                        Ty_ty tf_actual = actual_ty(tf->head->ty);
+
+
+                        // fprintf(stderr, "Argument evaluated to type kind: %d\n", field_exp.ty->kind);
+                        // fprintf(stderr, "Expected formal parameter type kind: %d\n", tf->head->ty->kind);
+                        // fprintf(stderr, "After resolution - Arg: %d, Formal: %d\n", field_exp_actual->kind, tf_actual->kind);
+                                    
+                        if (field_exp_actual->kind != tf_actual->kind) {
                             EM_error(a->pos, "field %s has wrong type", 
                                     S_name(fields->head->name));
                         }
@@ -214,12 +292,21 @@ struct expty transExp(S_table venv, S_table tenv, A_exp a) {
         }
         
         case A_seqExp: {
+            //fprintf(stderr,"started seq exp\n");
             A_expList seq = a->u.seq;
             struct expty result = expTy(NULL, Ty_Void());
             
-            // Process each expression in sequence and return type of last one
             while (seq) {
                 result = transExp(venv, tenv, seq->head);
+                //fprintf(stderr, "Processing seq expression kind: %d\n", seq->head->kind);
+                if (seq->head->kind == A_assignExp) {
+                    //fprintf(stderr, "Processing assignment in sequence\n");
+                    if (seq->head->u.assign.var->kind == A_simpleVar) {
+                        S_symbol var_name = seq->head->u.assign.var->u.simple;
+                        E_enventry entry = S_look(venv, var_name);
+                        //fprintf(stderr, "Variable %s in sequence: %p\n", S_name(var_name), entry);
+                    }
+                }
                 seq = seq->tail;
             }
             
@@ -227,10 +314,10 @@ struct expty transExp(S_table venv, S_table tenv, A_exp a) {
         }
         
         case A_assignExp: {
+            //fprintf(stderr,"started assign exp\n");
             struct expty var = transVar(venv, tenv, a->u.assign.var);
             struct expty exp = transExp(venv, tenv, a->u.assign.exp);
             
-            // Check type compatibility
             if (var.ty->kind != exp.ty->kind && 
                 !(var.ty->kind == Ty_record && exp.ty->kind == Ty_nil)) {
                 EM_error(a->pos, "type mismatch in assignment");
@@ -240,35 +327,28 @@ struct expty transExp(S_table venv, S_table tenv, A_exp a) {
         }
         
         case A_ifExp: {
+            //fprintf(stderr,"started if exp\n");
             struct expty test = transExp(venv, tenv, a->u.iff.test);
             struct expty then = transExp(venv, tenv, a->u.iff.then);
             
-            // Test condition must be integer (Boolean)
             if (test.ty->kind != Ty_int) {
                 EM_error(a->u.iff.test->pos, "integer (boolean) required for condition");
             }
             
-            // Handle optional else clause
             if (a->u.iff.elsee) {
                 struct expty elsee = transExp(venv, tenv, a->u.iff.elsee);
                 
-                // Then and else must have same type
-                if (then.ty->kind != elsee.ty->kind) {
-                    EM_error(a->pos, "then and else expressions must have same type");
-                }
-                
                 return expTy(NULL, then.ty);
             } else {
-                // Without else, the result is void
                 return expTy(NULL, Ty_Void());
             }
         }
         
         case A_whileExp: {
+            //fprintf(stderr,"started while exp\n");
             struct expty test = transExp(venv, tenv, a->u.whilee.test);
             struct expty body = transExp(venv, tenv, a->u.whilee.body);
             
-            // Test condition must be integer (Boolean)
             if (test.ty->kind != Ty_int) {
                 EM_error(a->u.whilee.test->pos, "integer (boolean) required for condition");
             }
@@ -277,10 +357,10 @@ struct expty transExp(S_table venv, S_table tenv, A_exp a) {
         }
         
         case A_forExp: {
+            //fprintf(stderr,"started for exp\n");
             struct expty lo = transExp(venv, tenv, a->u.forr.lo);
             struct expty hi = transExp(venv, tenv, a->u.forr.hi);
             
-            // Range bounds must be integers
             if (lo.ty->kind != Ty_int) {
                 EM_error(a->u.forr.lo->pos, "integer required for lower bound");
             }
@@ -288,11 +368,9 @@ struct expty transExp(S_table venv, S_table tenv, A_exp a) {
                 EM_error(a->u.forr.hi->pos, "integer required for upper bound");
             }
             
-            // Add loop variable to scope
             S_beginScope(venv);
             S_enter(venv, a->u.forr.var, E_VarEntry(Ty_Int()));
             
-            // Type check the body
             transExp(venv, tenv, a->u.forr.body);
             
             S_endScope(venv);
@@ -304,10 +382,13 @@ struct expty transExp(S_table venv, S_table tenv, A_exp a) {
             return expTy(NULL, Ty_Void());
             
         case A_letExp: {
+            // //fprintf(stderr,"started let exp\n");
+            // pr_exp(stderr, a, 0);
             struct expty exp;
             A_decList d;
             S_beginScope(venv);
             S_beginScope(tenv);
+            
             for (d = a->u.let.decs; d; d = d->tail)
                 transDec(venv, tenv, d->head);
             exp = transExp(venv, tenv, a->u.let.body);
@@ -317,6 +398,7 @@ struct expty transExp(S_table venv, S_table tenv, A_exp a) {
         }
         
         case A_arrayExp: {
+            // fprintf(stderr,"started array exp\n");
             Ty_ty array_ty = S_look(tenv, a->u.array.typ);
             if (!array_ty) {
                 EM_error(a->pos, "undefined type %s", S_name(a->u.array.typ));
@@ -330,15 +412,22 @@ struct expty transExp(S_table venv, S_table tenv, A_exp a) {
                 return expTy(NULL, Ty_Array(Ty_Int()));
             }
             
-            // Size must be integer
             struct expty size = transExp(venv, tenv, a->u.array.size);
             if (size.ty->kind != Ty_int) {
                 EM_error(a->u.array.size->pos, "integer required for array size");
             }
             
-            // Check initializer type
             struct expty init = transExp(venv, tenv, a->u.array.init);
-            if (init.ty->kind != array_ty->u.array->kind) {
+
+            Ty_ty init_actual = actual_ty(init.ty);
+            Ty_ty array_actual = actual_ty(array_ty->u.array);
+
+            // fprintf(stderr, "Argument evaluated to type kind: %d\n", init.ty->kind);
+            // fprintf(stderr, "Expected formal parameter type kind: %d\n", array_ty->u.array->kind);
+            // fprintf(stderr, "After resolution - Arg: %d, Formal: %d\n", init_actual->kind, array_actual->kind);
+            
+
+            if (init_actual->kind != array_actual->kind) {
                 EM_error(a->u.array.init->pos, "type mismatch in array initializer");
             }
             
@@ -346,25 +435,55 @@ struct expty transExp(S_table venv, S_table tenv, A_exp a) {
         }
     }
 
-    assert(0); // Should never reach here
     return expTy(NULL, Ty_Void());
 }
 
 void transDec(S_table venv, S_table tenv, A_dec d) {
+    
     switch(d->kind) {
         case A_varDec: {
+            //fprintf(stderr,"started var dec...\n");
             struct expty e = transExp(venv, tenv, d->u.var.init);
             S_enter(venv, d->u.var.var, E_VarEntry(e.ty));
-            break;
+            //fprintf(stderr,"end var dec\n");
+            return;
         }
         case A_typeDec: {
-            S_enter(tenv, d->u.type->head->name,
-                    transTy(tenv, d->u.type->head->ty));
-            break;
+            //fprintf(stderr,"started type dec...\n");
+            A_nametyList types;
+    
+            for (types = d->u.type; types; types = types->tail) {
+                S_enter(tenv, types->head->name, Ty_Name(types->head->name, NULL));
+            }
+            
+            for (types = d->u.type; types; types = types->tail) {
+                Ty_ty type = transTy(tenv, types->head->ty);
+                Ty_ty name_ty = S_look(tenv, types->head->name);
+                if (name_ty && name_ty->kind == Ty_name) {
+                    name_ty->u.name.ty = type;
+                }
+            }
+            //fprintf(stderr,"end type dec\n");
+            return;
         }
         case A_functionDec: {
+            //fprintf(stderr,"started function dec...\n");
+            // pr_dec(stderr, d, 0);
             A_fundec f = d->u.function->head;
-            Ty_ty resultTy = S_look(tenv, f->result);
+            Ty_ty resultTy;
+            if(f -> result){
+                resultTy = S_look(tenv, f->result);
+                if (!resultTy) {
+                    // Debug the missing type
+                    //fprintf(stderr, "ERROR: Return type %s not found for function %s\n", S_name(f->result), S_name(f->name));
+                    // Provide a fallback type instead of NULL
+                    // resultTy = Ty_Int();
+                } else {
+                    //fprintf(stderr, "DEBUG: Return type %s  for function %s\n", S_name(f->result), S_name(f->name));
+                }
+                
+            } else
+                resultTy = Ty_Void();
             Ty_tyList formalTys = makeFormalTyList(tenv, f->params);
             S_enter(venv, f->name, E_FunEntry(formalTys, resultTy));
             S_beginScope(venv);
@@ -376,7 +495,8 @@ void transDec(S_table venv, S_table tenv, A_dec d) {
             }
             transExp(venv, tenv, f->body);
             S_endScope(venv);
-            break;
+            //fprintf(stderr,"end function dec\n");
+            return;
         }
     }
 }
@@ -389,7 +509,7 @@ Ty_ty transTy(S_table tenv, A_ty a) {
                 return ty;
             else {
                 EM_error(a->pos, "undefined type %s", S_name(a->u.name));
-                return Ty_Int(); /* default to int for undefined types */
+                return Ty_Int();
             }
         }
         
@@ -430,6 +550,5 @@ Ty_ty transTy(S_table tenv, A_ty a) {
         }
     }
     
-    assert(0);
     return NULL;
 }

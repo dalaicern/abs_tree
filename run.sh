@@ -1,3 +1,3 @@
 make clean
 make a.out
-./a.out tests/test5
+./a.out tests/test4
